@@ -17,7 +17,8 @@ SignVerifyHandler.PRIORITY = 9990
 
 -- return concat_str,err
 
-local function retrieve_token(conf,request)
+local function retrieve_token(conf,request,jwt_secret)
+    local args = nil
     if "POST" == request_method then
         -- application/multi-part will not be support
         request.read_body()
@@ -31,8 +32,7 @@ local function retrieve_token(conf,request)
 
     if args then
         local concat_str = concat_params_detail(conf.token_name,args)
-        local app_secret = nil
-        return build_sign(concat_str,app_secret),nil
+        return build_sign(conf.open_debug,concat_str,jwt_secret),nil
     else
         return nil,'appId and ts and sign must not be empty'
     end
@@ -135,7 +135,7 @@ function SignVerifyHandler:access(conf)
     end
 
 
-    local token, err = retrieve_token(conf,ngx.req)
+    local token, err = retrieve_token(conf,ngx.req,jwt_secret)
 
     if err then
         return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
