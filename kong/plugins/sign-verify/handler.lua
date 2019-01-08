@@ -4,6 +4,9 @@ local responses = require "kong.tools.responses"
 local constants = require "kong.constants"
 
 local ipairs         = ipairs
+local string_format  = string.format
+local ngx_re_gmatch  = ngx.re.gmatch
+local ngx_set_header = ngx.req.set_header
 local request_method = ngx.var.request_method
 
 local SignVerifyHandler = BasePlugin:extend()
@@ -85,6 +88,35 @@ local function build_sign(debug,concat_str,app_secret)
 end
 
 
+
+local function load_consumer(consumer_id, anonymous)
+  local result, err = singletons.db.consumers:select { id = consumer_id }
+  if not result then
+    if anonymous and not err then
+      err = 'anonymous consumer "' .. consumer_id .. '" not found'
+    end
+    return nil, err
+  end
+  return result
+end
+
+local function set_consumer(consumer, jwt_secret, token)
+  ngx_set_header(constants.HEADERS.CONSUMER_ID, consumer.id)
+  ngx_set_header(constants.HEADERS.CONSUMER_CUSTOM_ID, consumer.custom_id)
+  ngx_set_header(constants.HEADERS.CONSUMER_USERNAME, consumer.username)
+  ngx.ctx.authenticated_consumer = consumer
+  if jwt_secret then
+    ngx.ctx.authenticated_credential = jwt_secret
+    ngx.ctx.authenticated_jwt_token = token
+    ngx_set_header(constants.HEADERS.ANONYMOUS, nil) -- in case of auth plugins concatenation
+  else
+    ngx_set_header(constants.HEADERS.ANONYMOUS, true)
+  end
+
+end
+
+
+
 function SignVerifyHandler:new()
     SignVerifyHandler.super.new(self, "sign-verify")
 end
@@ -131,6 +163,23 @@ function SignVerifyHandler:access(conf)
         return false, {status = 403, message = "Invalid signature"}
     end
 
+    -- Retrieve the consumer
+    local consumer_cache_key = singletons.db.consumers:cache_key(jwt_secret.consumer_id)
+    local consumer, err      = singletons.cache:get(consumer_cache_key, nil,
+                                                  load_consumer,
+                                                  jwt_secret.consumer_id, true)
+    if err then
+    return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+    end
+
+    -- However this should not happen
+    if not consumer then
+    return false, {status = 403, message = string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key)}
+    end
+
+    set_consumer(consumer, jwt_secret, token)
+
+    return true
 end
 
 return SignVerifyHandler
