@@ -3,31 +3,31 @@ local BasePlugin = require "kong.plugins.base_plugin"
 local responses = require "kong.tools.responses"
 local constants = require "kong.constants"
 
-local ipairs         = ipairs
+--local ipairs         = ipairs
 local string_format  = string.format
-local ngx_re_gmatch  = ngx.re.gmatch
 local ngx_set_header = ngx.req.set_header
 local request_method = ngx.var.request_method
 
 local SignVerifyHandler = BasePlugin:extend()
 
-
 -- the number is more big and the priority is more high
 
 SignVerifyHandler.PRIORITY = 9990
 
+
 -- return concat_str,err
 
 local function retrieve_token(conf,request)
-    if "POST" == request_method
+    if "POST" == request_method then
         -- application/multi-part will not be support
         request.read_body()
         args = request.get_post_args()
-    else if "GET" == request_method
+    else if "GET" == request_method then
         args = request.get_uri_args()
     else
         -- not supported http action such as put batch delete etc
         return nil, "sign-verify supported POST/GET request only"
+    end
     end
 
     if args then
@@ -59,7 +59,7 @@ local function concat_params_detail(token_name,args)
     local sorted_tbl = {}
 
     for k,v in pairs(args) do
-        if k ~= token_name
+        if k ~= token_name then
             sorted_tbl[k] = v
         end
     end
@@ -69,8 +69,8 @@ local function concat_params_detail(token_name,args)
     local params = ''
 
     for k,v in pairs(sorted_tbl) do
-       params = params..k
-       params = params..v
+        params = params..k
+        params = params..v
     end
 
     return params
@@ -81,7 +81,7 @@ end
 
 local function build_sign(debug,concat_str,app_secret)
     local final_str = app_secret..concat_str
-    if debug == 1
+    if debug == 1 then
         ngx.log(ngx.ERR,"to md5 string is",final_str)
     end
     return ngx.md5(final_str)
@@ -90,28 +90,28 @@ end
 
 
 local function load_consumer(consumer_id, anonymous)
-  local result, err = singletons.db.consumers:select { id = consumer_id }
-  if not result then
-    if anonymous and not err then
-      err = 'anonymous consumer "' .. consumer_id .. '" not found'
+    local result, err = singletons.db.consumers:select { id = consumer_id }
+    if not result then
+        if anonymous and not err then
+            err = 'anonymous consumer "' .. consumer_id .. '" not found'
+        end
+        return nil, err
     end
-    return nil, err
-  end
-  return result
+    return result
 end
 
 local function set_consumer(consumer, jwt_secret, token)
-  ngx_set_header(constants.HEADERS.CONSUMER_ID, consumer.id)
-  ngx_set_header(constants.HEADERS.CONSUMER_CUSTOM_ID, consumer.custom_id)
-  ngx_set_header(constants.HEADERS.CONSUMER_USERNAME, consumer.username)
-  ngx.ctx.authenticated_consumer = consumer
-  if jwt_secret then
-    ngx.ctx.authenticated_credential = jwt_secret
-    ngx.ctx.authenticated_jwt_token = token
-    ngx_set_header(constants.HEADERS.ANONYMOUS, nil) -- in case of auth plugins concatenation
-  else
-    ngx_set_header(constants.HEADERS.ANONYMOUS, true)
-  end
+    ngx_set_header(constants.HEADERS.CONSUMER_ID, consumer.id)
+    ngx_set_header(constants.HEADERS.CONSUMER_CUSTOM_ID, consumer.custom_id)
+    ngx_set_header(constants.HEADERS.CONSUMER_USERNAME, consumer.username)
+    ngx.ctx.authenticated_consumer = consumer
+    if jwt_secret then
+        ngx.ctx.authenticated_credential = jwt_secret
+        ngx.ctx.authenticated_jwt_token = token
+        ngx_set_header(constants.HEADERS.ANONYMOUS, nil) -- in case of auth plugins concatenation
+    else
+        ngx_set_header(constants.HEADERS.ANONYMOUS, true)
+    end
 
 end
 
@@ -130,14 +130,14 @@ function SignVerifyHandler:access(conf)
 
     local jwt_secret_cache_key = singletons.dao.jwt_secrets:cache_key(jwt_secret_key)
     local jwt_secret, err      = singletons.cache:get(jwt_secret_cache_key, nil,
-                                                    load_credential, jwt_secret_key)
+            load_credential, jwt_secret_key)
     if err then
         return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
     end
 
 
     local token, err = retrieve_token(conf,ngx.req)
-    
+
     if err then
         return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
     end
@@ -145,36 +145,36 @@ function SignVerifyHandler:access(conf)
     local ttype = type(token)
     if ttype ~= "string" then
         if ttype == "nil" then
-          return false, {status = 401}
+            return false, {status = 401}
         elseif ttype == "table" then
-          return false, {status = 401, message = "Multiple tokens provided"}
+            return false, {status = 401, message = "Multiple tokens provided"}
         else
-          return false, {status = 401, message = "Unrecognizable token"}
+            return false, {status = 401, message = "Unrecognizable token"}
         end
     end
 
     -- check sign is ok ?
 
-    if sign == nil 
+    if sign == nil  then
         return false, {status = 401, message = "missing key param sign"}
-    end 
+    end
 
-    if sign ~= token
+    if sign ~= token then
         return false, {status = 403, message = "Invalid signature"}
     end
 
     -- Retrieve the consumer
     local consumer_cache_key = singletons.db.consumers:cache_key(jwt_secret.consumer_id)
     local consumer, err      = singletons.cache:get(consumer_cache_key, nil,
-                                                  load_consumer,
-                                                  jwt_secret.consumer_id, true)
+            load_consumer,
+            jwt_secret.consumer_id, true)
     if err then
-    return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+        return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
     end
 
     -- However this should not happen
     if not consumer then
-    return false, {status = 403, message = string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key)}
+        return false, {status = 403, message = string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key)}
     end
 
     set_consumer(consumer, jwt_secret, token)
