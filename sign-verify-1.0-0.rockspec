@@ -16,6 +16,7 @@ dependencies = {
 build = {
   type = "builtin",
   modules = {
+    ["kong.plugins.sign-verify.daos"] = "kong/plugins/sign-verify/daos.lua",
     ["kong.plugins.sign-verify.handler"] = "kong/plugins/sign-verify/handler.lua",
     ["kong.plugins.sign-verify.schema"]  = "kong/plugins/sign-verify/schema.lua"
   }

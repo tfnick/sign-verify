@@ -76,8 +76,11 @@ end
 
 -- return sign,err
 
-local function build_sign(concat_str,app_secret)
+local function build_sign(debug,concat_str,app_secret)
     local final_str = app_secret..concat_str
+    if debug == 1
+        ngx.log(ngx.ERR,"to md5 string is",final_str)
+    end
     return ngx.md5(final_str)
 end
 
