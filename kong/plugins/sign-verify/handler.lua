@@ -1,10 +1,11 @@
-local singletons = require "kong.singletons"
 local BasePlugin = require "kong.plugins.base_plugin"
+local singletons = require "kong.singletons"
 local responses = require "kong.tools.responses"
 local constants = require "kong.constants"
 
---local ipairs         = ipairs
+local ipairs         = ipairs
 local string_format  = string.format
+local table = table
 local ngx_set_header = ngx.req.set_header
 local request_method = ngx.var.request_method
 
@@ -32,7 +33,8 @@ local function retrieve_token(conf,request,jwt_secret)
 
     if args then
         local concat_str = concat_params_detail(conf.token_name,args)
-        return build_sign(conf.open_debug,concat_str,jwt_secret),nil
+        local built_sign = build_sign(conf.open_debug,concat_str,jwt_secret)
+        return built_sign ,nil
     else
         return nil,'appId and ts and sign must not be empty'
     end
