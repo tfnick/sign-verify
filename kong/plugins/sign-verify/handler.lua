@@ -22,12 +22,11 @@ local function retrieve_token(conf,request)
         -- application/multi-part will not be support
         request.read_body()
         args = request.get_post_args()
-    else if "GET" == request_method then
+    elseif "GET" == request_method then
         args = request.get_uri_args()
     else
         -- not supported http action such as put batch delete etc
         return nil, "sign-verify supported POST/GET request only"
-    end
     end
 
     if args then
