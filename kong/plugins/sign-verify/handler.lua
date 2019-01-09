@@ -170,7 +170,6 @@ function SignVerifyHandler:access(conf)
 
     set_consumer(consumer, jwt_secret, token)
 
-    return true
 end
 
 return SignVerifyHandler
