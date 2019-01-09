@@ -2,21 +2,24 @@ local BasePlugin = require "kong.plugins.base_plugin"
 local singletons = require "kong.singletons"
 local responses = require "kong.tools.responses"
 local constants = require "kong.constants"
-
-local ipairs = ipairs
-local string_format = string.format
---local table = table
+-- fix bug for 'KONG_HEADER_FILTER_STARTED_AT' (a nil value)
+local ngx_now     = ngx.now
+local update_time = ngx.update_time
 local ngx_set_header = ngx.req.set_header
---local request_method = ngx.var.request_method
 
 local SignVerifyHandler = BasePlugin:extend()
 
 -- the number is more big and the priority is more high
 SignVerifyHandler.PRIORITY = 9990
 
--- iterator
+local function get_now()
+    update_time()
+    return ngx_now() * 1000 -- time is kept in seconds with millisecond resolution.
+end
 
-function pairsByKeys(t)
+-- iterator for ascii sort
+
+local function pairsByKeys(t)
     local a = {}
 
     for n in pairs(t) do
@@ -34,34 +37,15 @@ function pairsByKeys(t)
 end
 
 local function concat_params_detail(token_name, args)
-
     local sorted_tbl = {}
-
-    --for k,v in pairs(args) do
-    --   ngx.say("[POST] key:", k, " v:", v)
-    --    if k ~= token_name then
-    --        sorted_tbl[k] = v
-    --    end
-    --end
-
-    ngx.log(ngx.ERR, "token_name", token_name)
-
-    --sorted_tbl = sortTable(args)
-
     local params = ''
-
     for k, v in pairsByKeys(args) do
-        ngx.say("[POST] key:", k, " v:", v)
         if k ~= token_name then
             params = params .. k
             params = params .. v
         end
     end
-
     sorted_tbl = nil
-
-    ngx.log(ngx.ERR, "params sorted", params)
-
     return params
 
 end
@@ -70,11 +54,11 @@ end
 
 local function build_sign(debug, concat_str, app_secret)
     local final_str = app_secret .. concat_str
-    if debug == 1 then
-        ngx.log(ngx.ERR, "to md5 string is", final_str)
-    end
     local sign_server = ngx.md5(final_str)
-    ngx.log(ngx.ERR, "sign server is ", sign_server)
+    if debug == 1 then
+        ngx.log(ngx.NOTICE, "server to sign string is ", final_str)
+        ngx.log(ngx.NOTICE, "server sign md5 value is", sign_server)
+    end
     return sign_server
 end
 
@@ -83,7 +67,7 @@ end
 local function retrieved_args(conf, request)
     local args = nil
     local request_method = ngx.var.request_method
-    ngx.log(ngx.ERR, "request_method", request_method)
+
     if "POST" == request_method then
         -- application/multi-part will not be support
         request.read_body()
@@ -109,20 +93,11 @@ local function retrieved_server_token(conf, args, jwt_secret)
 end
 
 local function retrieve_appkey(conf, args)
-
-
-    ngx.log(ngx.ERR, "appkey_name 1 ", conf.appKey_name)
-
-    ngx.log(ngx.ERR, "appkey_name 2 ", args['"' .. conf.appKey_name .. '"'])
-
     return args[conf.appKey_name]
-
 end
 
 local function retrieve_sign(conf, args)
-
     return args[conf.token_name]
-
 end
 
 local function load_consumer(consumer_id, anonymous)
@@ -140,6 +115,7 @@ local function set_consumer(consumer, jwt_secret, token)
     ngx_set_header(constants.HEADERS.CONSUMER_ID, consumer.id)
     ngx_set_header(constants.HEADERS.CONSUMER_CUSTOM_ID, consumer.custom_id)
     ngx_set_header(constants.HEADERS.CONSUMER_USERNAME, consumer.username)
+    ngx.ctx.KONG_HEADER_FILTER_STARTED_AT = get_now()
     ngx.ctx.authenticated_consumer = consumer
     if jwt_secret then
         ngx.ctx.authenticated_credential = jwt_secret
@@ -177,7 +153,6 @@ function SignVerifyHandler:access(conf)
 
     local sign = retrieve_sign(conf, args)
 
-    --
     local jwt_secret_cache_key = singletons.dao.jwt_secrets:cache_key(jwt_secret_key)
     local jwt_secret, err = singletons.cache:get(jwt_secret_cache_key, nil,
             load_credential, jwt_secret_key)
@@ -196,7 +171,6 @@ function SignVerifyHandler:access(conf)
     end
 
     -- check sign is ok ?
-
     if sign == nil then
         return responses.send(401, "missing key param sign")
     end
@@ -204,28 +178,17 @@ function SignVerifyHandler:access(conf)
     if sign ~= token then
         return responses.send(403, "Invalid signature")
     else
-        ngx.log(ngx.NOTICE, "handler pass with token", token)
+        -- However this should not happen
+        if not consumer then
+            return responses.send(403, string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key))
+        else
+            ngx.log(ngx.NOTICE, "consumer found and custom_id is ", consumer.custom_id)
+        end
+
+        set_consumer(consumer, jwt_secret, token)
+
     end
 
-    -- Retrieve the consumer
-    local consumer_cache_key = singletons.db.consumers:cache_key(jwt_secret.consumer_id)
-    local consumer, err = singletons.cache:get(consumer_cache_key, nil,
-            load_consumer,
-            jwt_secret.consumer_id, true)
-    if err then
-        return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
-    end
-
-    -- However this should not happen
-    if not consumer then
-        return responses.send(403, string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key))
-    else
-        ngx.log(ngx.NOTICE, "consumer found and custom_id is ", consumer.custom_id)
-    end
-
-    set_consumer(consumer, jwt_secret, token)
-
-    ngx.log(ngx.NOTICE, "handler pass with token", token)
 end
 
 return SignVerifyHandler
