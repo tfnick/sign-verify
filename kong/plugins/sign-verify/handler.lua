@@ -6,7 +6,8 @@ local constants = require "kong.constants"
 local ngx_now     = ngx.now
 local update_time = ngx.update_time
 local ngx_set_header = ngx.req.set_header
-
+local ipairs = ipairs
+local string_format = string.format
 local SignVerifyHandler = BasePlugin:extend()
 
 -- the number is more big and the priority is more high
