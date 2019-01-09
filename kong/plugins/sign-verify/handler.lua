@@ -179,11 +179,22 @@ function SignVerifyHandler:access(conf)
     if sign ~= token then
         return responses.send(403, "Invalid signature")
     else
+
+        -- Retrieve the consumer
+        local consumer_cache_key = singletons.db.consumers:cache_key(jwt_secret.consumer_id)
+        local consumer, err      = singletons.cache:get(consumer_cache_key, nil,
+                load_consumer,
+                jwt_secret.consumer_id, true)
+        if err then
+            return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+        end
         -- However this should not happen
         if not consumer then
             return responses.send(403, string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key))
         else
-            ngx.log(ngx.NOTICE, "consumer found and custom_id is ", consumer.custom_id)
+            if conf.open_debug == 1 then
+                ngx.log(ngx.NOTICE, "consumer found and custom_id is ", consumer.custom_id)
+            end
         end
 
         set_consumer(consumer, jwt_secret, token)
