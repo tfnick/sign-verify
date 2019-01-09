@@ -3,37 +3,64 @@ local singletons = require "kong.singletons"
 local responses = require "kong.tools.responses"
 local constants = require "kong.constants"
 
-local ipairs         = ipairs
-local string_format  = string.format
-local table = table
+local ipairs = ipairs
+local string_format = string.format
+--local table = table
 local ngx_set_header = ngx.req.set_header
-local request_method = ngx.var.request_method
+--local request_method = ngx.var.request_method
 
 local SignVerifyHandler = BasePlugin:extend()
 
 -- the number is more big and the priority is more high
-
 SignVerifyHandler.PRIORITY = 9990
 
+-- iterator
 
-local function concat_params_detail(token_name,args)
+function pairsByKeys(t)
+    local a = {}
+
+    for n in pairs(t) do
+        a[#a + 1] = n
+    end
+
+    table.sort(a)
+
+    local i = 0
+
+    return function()
+        i = i + 1
+        return a[i], t[a[i]]
+    end
+end
+
+local function concat_params_detail(token_name, args)
 
     local sorted_tbl = {}
 
-    for k,v in pairs(args) do
-        if k ~= token_name then
-            sorted_tbl[k] = v
-        end
-    end
+    --for k,v in pairs(args) do
+    --   ngx.say("[POST] key:", k, " v:", v)
+    --    if k ~= token_name then
+    --        sorted_tbl[k] = v
+    --    end
+    --end
 
-    table.sort(sorted_tbl)
+    ngx.log(ngx.ERR, "token_name", token_name)
+
+    --sorted_tbl = sortTable(args)
 
     local params = ''
 
-    for k,v in pairs(sorted_tbl) do
-        params = params..k
-        params = params..v
+    for k, v in pairsByKeys(args) do
+        ngx.say("[POST] key:", k, " v:", v)
+        if k ~= token_name then
+            params = params .. k
+            params = params .. v
+        end
     end
+
+    sorted_tbl = nil
+
+    ngx.log(ngx.ERR, "params sorted", params)
 
     return params
 
@@ -41,52 +68,62 @@ end
 
 -- return sign,err
 
-local function build_sign(debug,concat_str,app_secret)
-    local final_str = app_secret..concat_str
+local function build_sign(debug, concat_str, app_secret)
+    local final_str = app_secret .. concat_str
     if debug == 1 then
-        ngx.log(ngx.ERR,"to md5 string is",final_str)
+        ngx.log(ngx.ERR, "to md5 string is", final_str)
     end
-    return ngx.md5(final_str)
+    local sign_server = ngx.md5(final_str)
+    ngx.log(ngx.ERR, "sign server is ", sign_server)
+    return sign_server
 end
 
 -- return concat_str,err
 
-local function retrieved_server_token(conf,request,jwt_secret)
+local function retrieved_args(conf, request)
     local args = nil
+    local request_method = ngx.var.request_method
+    ngx.log(ngx.ERR, "request_method", request_method)
     if "POST" == request_method then
         -- application/multi-part will not be support
         request.read_body()
         args = request.get_post_args()
+        return args, nil
     elseif "GET" == request_method then
         args = request.get_uri_args()
+        return args, nil
     else
         -- not supported http action such as put batch delete etc
         return nil, "sign-verify supported POST/GET request only"
     end
+end
 
+local function retrieved_server_token(conf, args, jwt_secret)
     if args then
-        local concat_str = concat_params_detail(conf.token_name,args)
-        local built_sign = build_sign(conf.open_debug,concat_str,jwt_secret)
-        return built_sign ,nil
+        local concat_str = concat_params_detail(conf.token_name, args)
+        local built_sign = build_sign(conf.open_debug, concat_str, jwt_secret)
+        return built_sign, nil
     else
-        return nil,'appId and ts and sign must not be empty'
+        return nil, 'appId and ts and sign must not be empty'
     end
 end
 
+local function retrieve_appkey(conf, args)
 
-local function retrieve_appkey(conf,request)
 
-    return request['"'..conf.appKey_name..'"']
+    ngx.log(ngx.ERR, "appkey_name 1 ", conf.appKey_name)
 
-end
+    ngx.log(ngx.ERR, "appkey_name 2 ", args['"' .. conf.appKey_name .. '"'])
 
-local function retrieve_sign(conf,request)
-
-    return request['"'..conf.token_name..'"']
+    return args[conf.appKey_name]
 
 end
 
+local function retrieve_sign(conf, args)
 
+    return args[conf.token_name]
+
+end
 
 local function load_consumer(consumer_id, anonymous)
     local result, err = singletons.db.consumers:select { id = consumer_id }
@@ -114,7 +151,13 @@ local function set_consumer(consumer, jwt_secret, token)
 
 end
 
-
+local function load_credential(jwt_secret_key)
+    local rows, err = singletons.dao.jwt_secrets:find_all { key = jwt_secret_key }
+    if err then
+        return nil, err
+    end
+    return rows[1]
+end
 
 function SignVerifyHandler:new()
     SignVerifyHandler.super.new(self, "sign-verify")
@@ -123,20 +166,30 @@ end
 function SignVerifyHandler:access(conf)
     SignVerifyHandler.super.access(self)
 
-    local jwt_secret_key = retrieve_appkey(conf,ngx.req)
+    local args = retrieved_args(conf, ngx.req)
 
-    local sign = retrieve_sign(conf,ngx.req)
+    local jwt_secret_key = retrieve_appkey(conf, args)
 
-    -- 
+    if not jwt_secret_key then
+        -- return responses.send_HTTP_INTERNAL_SERVER_ERROR( message = "missing key param appId"})
+        return responses.send(401, "missing key param appId")
+    end
+
+    local sign = retrieve_sign(conf, args)
+
+    --
     local jwt_secret_cache_key = singletons.dao.jwt_secrets:cache_key(jwt_secret_key)
-    local jwt_secret, err      = singletons.cache:get(jwt_secret_cache_key, nil,
+    local jwt_secret, err = singletons.cache:get(jwt_secret_cache_key, nil,
             load_credential, jwt_secret_key)
     if err then
         return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
     end
 
+    if not jwt_secret then
+        return responses.send(403, "appId is not invalid")
+    end
 
-    local token, err = retrieved_server_token(conf,ngx.req,jwt_secret)
+    local token, err = retrieved_server_token(conf, args, jwt_secret.secret)
 
     if err then
         return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
@@ -144,17 +197,19 @@ function SignVerifyHandler:access(conf)
 
     -- check sign is ok ?
 
-    if sign == nil  then
-        return fresponses.send_HTTP_INTERNAL_SERVER_ERROR({status = 401, message = "missing key param sign"})
+    if sign == nil then
+        return responses.send(401, "missing key param sign")
     end
 
     if sign ~= token then
-        return fresponses.send_HTTP_INTERNAL_SERVER_ERROR({status = 403, message = "Invalid signature"})
+        return responses.send(403, "Invalid signature")
+    else
+        ngx.log(ngx.NOTICE, "handler pass with token", token)
     end
 
     -- Retrieve the consumer
     local consumer_cache_key = singletons.db.consumers:cache_key(jwt_secret.consumer_id)
-    local consumer, err      = singletons.cache:get(consumer_cache_key, nil,
+    local consumer, err = singletons.cache:get(consumer_cache_key, nil,
             load_consumer,
             jwt_secret.consumer_id, true)
     if err then
@@ -163,11 +218,16 @@ function SignVerifyHandler:access(conf)
 
     -- However this should not happen
     if not consumer then
-        return responses.send_HTTP_INTERNAL_SERVER_ERROR({status = 403, message = string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key)})
+        return responses.send(403, string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key))
+    else
+        ngx.log(ngx.NOTICE, "consumer found and custom_id is ", consumer.custom_id)
     end
 
     set_consumer(consumer, jwt_secret, token)
 
+    ngx.log(ngx.NOTICE, "handler pass with token", token)
 end
 
 return SignVerifyHandler
+
+
