@@ -16,6 +16,39 @@ local SignVerifyHandler = BasePlugin:extend()
 SignVerifyHandler.PRIORITY = 9990
 
 
+local function concat_params_detail(token_name,args)
+
+    local sorted_tbl = {}
+
+    for k,v in pairs(args) do
+        if k ~= token_name then
+            sorted_tbl[k] = v
+        end
+    end
+
+    table.sort(sorted_tbl)
+
+    local params = ''
+
+    for k,v in pairs(sorted_tbl) do
+        params = params..k
+        params = params..v
+    end
+
+    return params
+
+end
+
+-- return sign,err
+
+local function build_sign(debug,concat_str,app_secret)
+    local final_str = app_secret..concat_str
+    if debug == 1 then
+        ngx.log(ngx.ERR,"to md5 string is",final_str)
+    end
+    return ngx.md5(final_str)
+end
+
 -- return concat_str,err
 
 local function retrieved_server_token(conf,request,jwt_secret)
@@ -51,41 +84,6 @@ local function retrieve_sign(conf,request)
 
     return request['"'..conf.token_name..'"']
 
-end
-
-
-
-local function concat_params_detail(token_name,args)
-
-    local sorted_tbl = {}
-
-    for k,v in pairs(args) do
-        if k ~= token_name then
-            sorted_tbl[k] = v
-        end
-    end
-
-    table.sort(sorted_tbl)
-
-    local params = ''
-
-    for k,v in pairs(sorted_tbl) do
-        params = params..k
-        params = params..v
-    end
-
-    return params
-
-end
-
--- return sign,err
-
-local function build_sign(debug,concat_str,app_secret)
-    local final_str = app_secret..concat_str
-    if debug == 1 then
-        ngx.log(ngx.ERR,"to md5 string is",final_str)
-    end
-    return ngx.md5(final_str)
 end
 
 
