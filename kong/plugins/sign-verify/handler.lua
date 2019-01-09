@@ -18,7 +18,7 @@ SignVerifyHandler.PRIORITY = 9990
 
 -- return concat_str,err
 
-local function retrieve_token(conf,request,jwt_secret)
+local function retrieved_server_token(conf,request,jwt_secret)
     local args = nil
     if "POST" == request_method then
         -- application/multi-part will not be support
@@ -129,6 +129,7 @@ function SignVerifyHandler:access(conf)
 
     local sign = retrieve_sign(conf,ngx.req)
 
+    -- 
     local jwt_secret_cache_key = singletons.dao.jwt_secrets:cache_key(jwt_secret_key)
     local jwt_secret, err      = singletons.cache:get(jwt_secret_cache_key, nil,
             load_credential, jwt_secret_key)
@@ -137,31 +138,20 @@ function SignVerifyHandler:access(conf)
     end
 
 
-    local token, err = retrieve_token(conf,ngx.req,jwt_secret)
+    local token, err = retrieved_server_token(conf,ngx.req,jwt_secret)
 
     if err then
         return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
     end
 
-    local ttype = type(token)
-    if ttype ~= "string" then
-        if ttype == "nil" then
-            return false, {status = 401}
-        elseif ttype == "table" then
-            return false, {status = 401, message = "Multiple tokens provided"}
-        else
-            return false, {status = 401, message = "Unrecognizable token"}
-        end
-    end
-
     -- check sign is ok ?
 
     if sign == nil  then
-        return false, {status = 401, message = "missing key param sign"}
+        return fresponses.send_HTTP_INTERNAL_SERVER_ERROR({status = 401, message = "missing key param sign"})
     end
 
     if sign ~= token then
-        return false, {status = 403, message = "Invalid signature"}
+        return fresponses.send_HTTP_INTERNAL_SERVER_ERROR({status = 403, message = "Invalid signature"})
     end
 
     -- Retrieve the consumer
@@ -175,7 +165,7 @@ function SignVerifyHandler:access(conf)
 
     -- However this should not happen
     if not consumer then
-        return false, {status = 403, message = string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key)}
+        return responses.send_HTTP_INTERNAL_SERVER_ERROR({status = 403, message = string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key)})
     end
 
     set_consumer(consumer, jwt_secret, token)
