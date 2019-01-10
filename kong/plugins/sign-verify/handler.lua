@@ -149,7 +149,7 @@ function SignVerifyHandler:access(conf)
 
     if not jwt_secret_key then
         -- return responses.send_HTTP_INTERNAL_SERVER_ERROR( message = "missing key param appId"})
-        return responses.send(401, "missing key param appId")
+        return responses.send(401, "Missing key param appId")
     end
 
     local sign = retrieve_sign(conf, args)
@@ -173,7 +173,7 @@ function SignVerifyHandler:access(conf)
 
     -- check sign is ok ?
     if sign == nil then
-        return responses.send(401, "missing key param sign")
+        return responses.send(401, "Missing key param sign")
     end
 
     if sign ~= token then
@@ -193,7 +193,7 @@ function SignVerifyHandler:access(conf)
             return responses.send(403, string_format("Could not find consumer for '%s=%s'", conf.appKey_name, jwt_secret_key))
         else
             if conf.open_debug == 1 then
-                ngx.log(ngx.NOTICE, "consumer found and custom_id is ", consumer.custom_id)
+                ngx.log(ngx.NOTICE, "Consumer found and custom_id is ", consumer.custom_id)
             end
         end
 
