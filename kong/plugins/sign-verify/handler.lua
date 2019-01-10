@@ -190,7 +190,7 @@ function SignVerifyHandler:access(conf)
         end
         -- However this should not happen
         if not consumer then
-            return responses.send(403, string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key))
+            return responses.send(403, string_format("Could not find consumer for '%s=%s'", conf.appKey_name, jwt_secret_key))
         else
             if conf.open_debug == 1 then
                 ngx.log(ngx.NOTICE, "consumer found and custom_id is ", consumer.custom_id)
