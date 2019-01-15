@@ -66,13 +66,28 @@ end
 -- return concat_str,err
 
 local function retrieved_args(conf, request)
-    local args = nil
     local request_method = ngx.var.request_method
 
     if "POST" == request_method then
         -- application/multi-part will not be support
         request.read_body()
-        args = request.get_post_args()
+        local args, err = request.get_post_args()
+
+        if err == "truncated" then
+            -- one can choose to ignore or reject the current request here
+        end
+
+        if not args then
+            ngx.say("failed to get post args: ", err)
+            return nil, err
+        end
+        for key, val in pairs(args) do
+            if type(val) == "table" then
+                ngx.say(key, ": ", table.concat(val, ", "))
+            else
+                ngx.say(key, ": ", val)
+            end
+        end
         return args, nil
     elseif "GET" == request_method then
         args = request.get_uri_args()
