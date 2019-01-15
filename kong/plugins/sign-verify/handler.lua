@@ -2,7 +2,7 @@ local BasePlugin = require "kong.plugins.base_plugin"
 local singletons = require "kong.singletons"
 local responses = require "kong.tools.responses"
 local constants = require "kong.constants"
-local public_utils = require "kong.tools.utils"
+local utils = require "kong.tools.utils"
 local ngx_req_get_headers = ngx.req.get_headers
 local ngx_req_read_body = ngx.req.read_body
 local ngx_req_get_uri_args = ngx.req.get_uri_args
@@ -15,6 +15,8 @@ local ngx_set_header = ngx.req.set_header
 local ipairs = ipairs
 local string_format = string.format
 local SignVerifyHandler = BasePlugin:extend()
+
+local my_request = require "kong.plugins.sign-verify.public"
 
 -- the number is more big and the priority is more high
 SignVerifyHandler.PRIORITY = 9990
@@ -73,12 +75,12 @@ end
 
 local function retrieved_args(conf)
     local request_method = ngx.var.request_method
-    ngx_req_read_body()
+    ngx.req.read_body()
     if "POST" == request_method then
-        local args = public_utils.get_post_args()
+        local args = utils.table_merge(ngx.req.get_uri_args(), my_request.get_body_args())
         return args, nil
     elseif "GET" == request_method then
-        local args = request.get_uri_args()
+        local args = ngx.req.get_uri_args()
         return args, nil
     else
         -- not supported http action such as put batch delete etc
@@ -146,7 +148,7 @@ end
 function SignVerifyHandler:access(conf)
     SignVerifyHandler.super.access(self)
 
-    local args = retrieved_args(conf, ngx.req)
+    local args = retrieved_args(conf)
 
     local jwt_secret_key = retrieve_appkey(conf, args)
 
