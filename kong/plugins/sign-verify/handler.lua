@@ -3,10 +3,6 @@ local singletons = require "kong.singletons"
 local responses = require "kong.tools.responses"
 local constants = require "kong.constants"
 local utils = require "kong.tools.utils"
-local ngx_req_get_headers = ngx.req.get_headers
-local ngx_req_read_body = ngx.req.read_body
-local ngx_req_get_uri_args = ngx.req.get_uri_args
-local ngx_req_get_body_data = ngx.req.get_body_data
 
 -- fix bug for 'KONG_HEADER_FILTER_STARTED_AT' (a nil value)
 local ngx_now     = ngx.now
@@ -75,12 +71,27 @@ end
 
 local function retrieved_args(conf)
     local request_method = ngx.var.request_method
-    ngx.req.read_body()
+    local args = nil
     if "POST" == request_method then
-        local args = utils.table_merge(ngx.req.get_uri_args(), my_request.get_body_args())
+        ngx.req.read_body()
+        args = utils.table_merge(ngx.req.get_uri_args(), my_request.get_body_args())
+
+        if conf.open_debug and args ~= nil then
+            for k, v in pairsByKeys(args) do
+                ngx.log(ngx.NOTICE, k , " "..v)
+            end
+        end
+
         return args, nil
     elseif "GET" == request_method then
-        local args = ngx.req.get_uri_args()
+        args = ngx.req.get_uri_args()
+
+        if conf.open_debug and args ~= nil then
+            for k, v in pairsByKeys(args) do
+                ngx.log(ngx.NOTICE, k , " "..v)
+            end
+        end
+
         return args, nil
     else
         -- not supported http action such as put batch delete etc
