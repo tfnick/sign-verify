@@ -2,6 +2,12 @@ local BasePlugin = require "kong.plugins.base_plugin"
 local singletons = require "kong.singletons"
 local responses = require "kong.tools.responses"
 local constants = require "kong.constants"
+local public_utils = require "kong.utils.public"
+local ngx_req_get_headers = ngx.req.get_headers
+local ngx_req_read_body = ngx.req.read_body
+local ngx_req_get_uri_args = ngx.req.get_uri_args
+local ngx_req_get_body_data = ngx.req.get_body_data
+
 -- fix bug for 'KONG_HEADER_FILTER_STARTED_AT' (a nil value)
 local ngx_now     = ngx.now
 local update_time = ngx.update_time
@@ -65,32 +71,14 @@ end
 
 -- return concat_str,err
 
-local function retrieved_args(conf, request)
+local function retrieved_args(conf)
     local request_method = ngx.var.request_method
-
+    ngx_req_read_body()
     if "POST" == request_method then
-        -- application/multi-part will not be support
-        request.read_body()
-        local args, err = request.get_post_args()
-
-        if err == "truncated" then
-            -- one can choose to ignore or reject the current request here
-        end
-
-        if not args then
-            ngx.say("failed to get post args: ", err)
-            return nil, err
-        end
-        for key, val in pairs(args) do
-            if type(val) == "table" then
-                ngx.say(key, ": ", table.concat(val, ", "))
-            else
-                ngx.say(key, ": ", val)
-            end
-        end
+        local args = public_utils.get_post_args()
         return args, nil
     elseif "GET" == request_method then
-        args = request.get_uri_args()
+        local args = request.get_uri_args()
         return args, nil
     else
         -- not supported http action such as put batch delete etc
