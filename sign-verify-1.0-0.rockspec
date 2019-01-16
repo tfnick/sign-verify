@@ -1,11 +1,8 @@
 package = "sign-verify"
 version = "1.0-0"
-local pluginName = "sign-verify"
-
 source = {
   url = "git://github.com/tfnick/sign-verify.git",
 }
-
 description = {
   summary = "A Kong plugin sign-verify",
   license = "Apache 2.0"
